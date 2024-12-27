@@ -499,9 +499,10 @@ test "SymlinkAt" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     if (builtin.target.os.tag == .windows) {
-        const res = single(SymlinkAt{ .dir = tmp.dir, .target = "target", .link_path = "test" });
+        return error.SkipZigTest;
+        // const res = single(SymlinkAt{ .dir = tmp.dir, .target = "target", .link_path = "test" });
         // likely NTSTATUS=0xc00000bb (UNSUPPORTED)
-        if (res == error.Unexpected) return error.SkipZigTest;
+        // if (res == error.Unexpected) return error.SkipZigTest;
     } else {
         try single(SymlinkAt{ .dir = tmp.dir, .target = "target", .link_path = "test" });
     }

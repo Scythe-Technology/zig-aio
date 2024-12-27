@@ -221,10 +221,10 @@ fn onThreadTimeout(ctx: *anyopaque, user_data: usize) void {
 
 fn ovlOff(offset: u64) windows.OVERLAPPED {
     return .{
-        .Internal = undefined,
-        .InternalHigh = undefined,
+        .Internal = 0,
+        .InternalHigh = 0,
         .DUMMYUNIONNAME = .{ .DUMMYSTRUCTNAME = @bitCast(offset) },
-        .hEvent = undefined,
+        .hEvent = null,
     };
 }
 
