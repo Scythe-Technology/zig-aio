@@ -253,7 +253,7 @@ fn start(self: *@This(), id: u16, uop: *Operation.Union) !void {
         .read => |*op| {
             const flags = try getHandleAccessInfo(op.file.handle);
             if (flags.FILE_READ_DATA != 1) return self.uringlator.finish(id, error.NotOpenForReading);
-            const h = fs.ReOpenFile(op.file.handle, flags, .{ .READ = 1, .WRITE = 1 }, fs.FILE_FLAG_OVERLAPPED);
+            const h = fs.ReOpenFile(op.file.handle, flags, .{ .READ = 1, .WRITE = 1, .DELETE = 1 }, fs.FILE_FLAG_OVERLAPPED);
             wtry(h != null and h.? != INVALID_HANDLE) catch |err| return self.uringlator.finish(id, err);
             self.iocp.associateHandle(id, h.?) catch |err| return self.uringlator.finish(id, err);
             self.ovls[id] = .{ .overlapped = ovlOff(op.offset), .owned = .{ .handle = h.? } };
@@ -262,7 +262,7 @@ fn start(self: *@This(), id: u16, uop: *Operation.Union) !void {
         .write => |*op| {
             const flags = try getHandleAccessInfo(op.file.handle);
             if (flags.FILE_WRITE_DATA != 1) return self.uringlator.finish(id, error.NotOpenForWriting);
-            const h = fs.ReOpenFile(op.file.handle, flags, .{ .READ = 1, .WRITE = 1 }, fs.FILE_FLAG_OVERLAPPED);
+            const h = fs.ReOpenFile(op.file.handle, flags, .{ .READ = 1, .WRITE = 1, .DELETE = 1 }, fs.FILE_FLAG_OVERLAPPED);
             wtry(h != null and h.? != INVALID_HANDLE) catch |err| return self.uringlator.finish(id, err);
             self.iocp.associateHandle(id, h.?) catch |err| return self.uringlator.finish(id, err);
             self.ovls[id] = .{ .overlapped = ovlOff(op.offset), .owned = .{ .handle = h.? } };
