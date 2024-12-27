@@ -1,7 +1,11 @@
 name: docs
-on: [push]
+
+on:
+  workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
   build-and-deploy:
     concurrency: ci-${{ github.ref }}
