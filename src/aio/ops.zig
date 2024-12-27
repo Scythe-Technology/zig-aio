@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 const aio = @import("../aio.zig");
 const posix = @import("posix/posix.zig");
 const windows = @import("posix/windows.zig");
-const win32 = @import("win32");
 
 pub const Id = enum(usize) { _ };
 
@@ -170,7 +169,7 @@ pub const Recv = struct {
     socket: std.posix.socket_t,
     buffer: []u8,
     _: switch (builtin.target.os.tag) {
-        .windows => [1]win32.networking.win_sock.WSABUF,
+        .windows => [1]std.os.windows.ws2_32.WSABUF,
         else => void,
     } = undefined,
     out_read: *usize,
@@ -187,7 +186,7 @@ pub const Send = struct {
     buffer: []const u8,
     out_written: ?*usize = null,
     _: switch (builtin.target.os.tag) {
-        .windows => [1]win32.networking.win_sock.WSABUF,
+        .windows => [1]std.os.windows.ws2_32.WSABUF,
         else => void,
     } = undefined,
     out_id: ?*Id = null,

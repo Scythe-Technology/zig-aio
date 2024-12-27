@@ -24,28 +24,22 @@ comptime {
     }
 }
 
+const windows = std.os.windows;
+
+const INVALID_HANDLE = windows.INVALID_HANDLE_VALUE;
+
 const checked = wposix.checked;
 const wtry = wposix.wtry;
 const werr = wposix.werr;
-const GetLastError = win32.foundation.GetLastError;
-const INVALID_HANDLE = std.os.windows.INVALID_HANDLE_VALUE;
-const HANDLE = win32.foundation.HANDLE;
-const CloseHandle = win32.foundation.CloseHandle;
-const INFINITE = win32.system.windows_programming.INFINITE;
-const io = win32.system.io;
 const fs = win32.storage.file_system;
-const win_sock = win32.networking.win_sock;
-const WSAGetLastError = win_sock.WSAGetLastError;
-const INVALID_SOCKET = win_sock.INVALID_SOCKET;
-const threading = win32.system.threading;
 
 const IoContext = struct {
-    overlapped: io.OVERLAPPED = std.mem.zeroes(io.OVERLAPPED),
+    overlapped: windows.OVERLAPPED = std.mem.zeroes(windows.OVERLAPPED),
 
     // needs to be cleaned up
     owned: union(enum) {
-        handle: HANDLE,
-        job: HANDLE,
+        handle: windows.HANDLE,
+        job: windows.HANDLE,
         none: void,
     } = .none,
 
@@ -54,7 +48,7 @@ const IoContext = struct {
 
     pub fn deinit(self: *@This()) void {
         switch (self.owned) {
-            inline .handle, .job => |h| checked(CloseHandle(h)),
+            inline .handle, .job => |h| checked(windows.ntdll.NtClose(h) == .SUCCESS),
             .none => {},
         }
         self.* = undefined;
@@ -112,7 +106,7 @@ fn queueCallback(self: *@This(), id: u16, uop: *Operation.Union) aio.Error!void 
     switch (uop.*) {
         .poll => return aio.Error.Unsupported,
         .wait_event_source => |*op| op._ = .{ .id = id, .iocp = &self.iocp },
-        .accept => |*op| op.out_socket.* = INVALID_SOCKET,
+        .accept => |*op| op.out_socket.* = windows.ws2_32.INVALID_SOCKET,
         inline .recv, .send => |*op| op._ = .{.{ .buf = @constCast(@ptrCast(op.buffer.ptr)), .len = @intCast(op.buffer.len) }},
         else => {},
     }
@@ -126,8 +120,8 @@ fn iocpDrainThread(self: *@This()) void {
     while (true) {
         var transferred: u32 = undefined;
         var key: Iocp.Key = undefined;
-        var maybe_ovl: ?*io.OVERLAPPED = null;
-        const res = io.GetQueuedCompletionStatus(self.iocp.port, &transferred, @ptrCast(&key), &maybe_ovl, INFINITE);
+        var maybe_ovl: ?*windows.OVERLAPPED = null;
+        const res = windows.kernel32.GetQueuedCompletionStatus(self.iocp.port, &transferred, @ptrCast(&key), &maybe_ovl, windows.INFINITE);
         if (res != 1 and maybe_ovl == null) {
             break;
         }
@@ -155,7 +149,7 @@ fn iocpDrainThread(self: *@This()) void {
                     const op = &self.uringlator.ops.nodes[id].used.child_exit;
                     if (op.out_term) |term| {
                         var code: u32 = undefined;
-                        if (win32.system.threading.GetExitCodeProcess(op.child, &code) == 0) {
+                        if (windows.kernel32.GetExitCodeProcess(op.child, &code) == 0) {
                             term.* = .{ .Unknown = 0 };
                         } else {
                             term.* = .{ .Exited = @truncate(code) };
@@ -225,11 +219,11 @@ fn onThreadTimeout(ctx: *anyopaque, user_data: usize) void {
     self.uringlator.finish(@intCast(user_data), error.Success);
 }
 
-fn ovlOff(offset: u64) io.OVERLAPPED {
+fn ovlOff(offset: u64) windows.OVERLAPPED {
     return .{
         .Internal = undefined,
         .InternalHigh = undefined,
-        .Anonymous = .{ .Anonymous = @bitCast(offset) },
+        .DUMMYUNIONNAME = .{ .DUMMYSTRUCTNAME = @bitCast(offset) },
         .hEvent = undefined,
     };
 }
@@ -240,10 +234,10 @@ const AccessInfo = packed struct {
     append: bool,
 };
 
-fn getHandleAccessInfo(handle: HANDLE) !fs.FILE_ACCESS_FLAGS {
-    var io_status_block: std.os.windows.IO_STATUS_BLOCK = undefined;
-    var access: std.os.windows.FILE_ACCESS_INFORMATION = undefined;
-    const rc = std.os.windows.ntdll.NtQueryInformationFile(handle, &io_status_block, &access, @sizeOf(std.os.windows.FILE_ACCESS_INFORMATION), .FileAccessInformation);
+fn getHandleAccessInfo(handle: windows.HANDLE) !fs.FILE_ACCESS_FLAGS {
+    var io_status_block: windows.IO_STATUS_BLOCK = undefined;
+    var access: windows.FILE_ACCESS_INFORMATION = undefined;
+    const rc = windows.ntdll.NtQueryInformationFile(handle, &io_status_block, &access, @sizeOf(windows.FILE_ACCESS_INFORMATION), .FileAccessInformation);
     switch (rc) {
         .SUCCESS => {},
         .INVALID_PARAMETER => unreachable,
@@ -263,7 +257,7 @@ fn start(self: *@This(), id: u16, uop: *Operation.Union) !void {
             wtry(h != null and h.? != INVALID_HANDLE) catch |err| return self.uringlator.finish(id, err);
             self.iocp.associateHandle(id, h.?) catch |err| return self.uringlator.finish(id, err);
             self.ovls[id] = .{ .overlapped = ovlOff(op.offset), .owned = .{ .handle = h.? } };
-            wtry(fs.ReadFile(h.?, op.buffer.ptr, @intCast(op.buffer.len), &trash, &self.ovls[id].overlapped)) catch |err| return self.uringlator.finish(id, err);
+            wtry(windows.kernel32.ReadFile(h.?, op.buffer.ptr, @intCast(op.buffer.len), &trash, &self.ovls[id].overlapped)) catch |err| return self.uringlator.finish(id, err);
         },
         .write => |*op| {
             const flags = try getHandleAccessInfo(op.file.handle);
@@ -272,12 +266,12 @@ fn start(self: *@This(), id: u16, uop: *Operation.Union) !void {
             wtry(h != null and h.? != INVALID_HANDLE) catch |err| return self.uringlator.finish(id, err);
             self.iocp.associateHandle(id, h.?) catch |err| return self.uringlator.finish(id, err);
             self.ovls[id] = .{ .overlapped = ovlOff(op.offset), .owned = .{ .handle = h.? } };
-            wtry(fs.WriteFile(h.?, op.buffer.ptr, @intCast(op.buffer.len), &trash, &self.ovls[id].overlapped)) catch |err| return self.uringlator.finish(id, err);
+            wtry(windows.kernel32.WriteFile(h.?, op.buffer.ptr, @intCast(op.buffer.len), &trash, &self.ovls[id].overlapped)) catch |err| return self.uringlator.finish(id, err);
         },
         .accept => |*op| {
             self.iocp.associateSocket(id, op.socket) catch |err| return self.uringlator.finish(id, err);
             op.out_socket.* = aio.socket(std.posix.AF.INET, 0, 0) catch |err| return self.uringlator.finish(id, err);
-            wtry(win_sock.AcceptEx(op.socket, op.out_socket.*, &op._, 0, @sizeOf(std.posix.sockaddr) + 16, @sizeOf(std.posix.sockaddr) + 16, &trash, &self.ovls[id].overlapped) == 1) catch |err| return self.uringlator.finish(id, err);
+            wtry(windows.ws2_32.AcceptEx(op.socket, op.out_socket.*, &op._, 0, @sizeOf(std.posix.sockaddr) + 16, @sizeOf(std.posix.sockaddr) + 16, &trash, &self.ovls[id].overlapped) == 1) catch |err| return self.uringlator.finish(id, err);
         },
         .recv => |*op| {
             self.iocp.associateSocket(id, op.socket) catch |err| return self.uringlator.finish(id, err);
@@ -302,7 +296,7 @@ fn start(self: *@This(), id: u16, uop: *Operation.Union) !void {
         .child_exit => |*op| {
             const job = win32.system.job_objects.CreateJobObjectW(null, null);
             wtry(job != null and job.? != INVALID_HANDLE) catch |err| return self.uringlator.finish(id, err);
-            errdefer checked(CloseHandle(job.?));
+            errdefer checked(windows.ntdll.NtClose(job.?) == .SUCCESS);
             wtry(win32.system.job_objects.AssignProcessToJobObject(job.?, op.child)) catch return self.uringlator.finish(id, error.Unexpected);
             const key: Iocp.Key = .{ .type = .child_exit, .id = id };
             var assoc: win32.system.job_objects.JOBOBJECT_ASSOCIATE_COMPLETION_PORT = .{
@@ -332,10 +326,10 @@ fn start(self: *@This(), id: u16, uop: *Operation.Union) !void {
 fn cancel(self: *@This(), id: u16, uop: *Operation.Union) bool {
     switch (uop.*) {
         .read, .write => {
-            return io.CancelIoEx(self.ovls[id].owned.handle, &self.ovls[id].overlapped) != 0;
+            return windows.kernel32.CancelIoEx(self.ovls[id].owned.handle, &self.ovls[id].overlapped) != 0;
         },
         inline .accept, .recv, .send, .send_msg, .recv_msg => |*op| {
-            return io.CancelIoEx(@ptrCast(op.socket), &self.ovls[id].overlapped) != 0;
+            return windows.kernel32.CancelIoEx(@ptrCast(op.socket), &self.ovls[id].overlapped) != 0;
         },
         .child_exit => {
             self.ovls[id].deinit();
@@ -372,7 +366,7 @@ fn completion(self: *@This(), id: u16, uop: *Operation.Union, failure: Operation
         switch (uop.*) {
             .timeout, .link_timeout => self.tqueue.disarm(.monotonic, id),
             .wait_event_source => |*op| op.source.native.removeWaiter(&op._.link),
-            .accept => |*op| if (op.out_socket.* != INVALID_SOCKET) checked(CloseHandle(op.out_socket.*)),
+            .accept => |*op| if (op.out_socket.* != windows.ws2_32.INVALID_SOCKET) checked(windows.ntdll.NtClose(op.out_socket.*) == .SUCCESS),
             else => {},
         }
     }
