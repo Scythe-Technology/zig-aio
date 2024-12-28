@@ -26,7 +26,7 @@ pub fn wtry(ret: anytype) !void {
     else
         ret;
     if (wbool == 0) return switch (windows.GetLastError()) {
-        .IO_PENDING => {}, // not error
+        .IO_PENDING, .HANDLE_EOF => {}, // not error
         else => |r| unexpectedError(r),
     };
 }
