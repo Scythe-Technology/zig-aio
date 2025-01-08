@@ -223,7 +223,7 @@ fn ovlOff(offset: u64) windows.OVERLAPPED {
     return .{
         .Internal = 0,
         .InternalHigh = 0,
-        .Anonymous = .{ .Anonymous = @bitCast(offset) },
+        .DUMMYUNIONNAME = .{ .DUMMYSTRUCTNAME = @bitCast(offset) },
         .hEvent = null,
     };
 }
