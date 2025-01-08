@@ -98,6 +98,7 @@ pub fn build(b: *std.Build) void {
             .link_libc = aio.link_libc,
             .single_threaded = minilib.single_threaded,
             .sanitize_thread = sanitize,
+            .test_runner = b.path("test-runner.zig"),
         });
         switch (mod) {
             .minilib => addImportsFrom(tst.root_module, minilib),

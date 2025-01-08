@@ -1,6 +1,6 @@
 # zig-aio
 
-zig-aio provides io_uring like asynchronous API and coroutine powered IO tasks for zig
+zig-aio provides io_uring like asynchronous API and coroutine powered IO tasks for zig. Forked from [zig-aio](https://github.com/Cloudef/zig-aio).
 
 * [Documentation](https://cloudef.github.io/zig-aio)
 

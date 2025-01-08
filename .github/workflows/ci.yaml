@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+jobs:
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v1
+      with:
+        version: 0.14.0-dev.2540+f857bf72e
+        use-cache: false
+
+    - name: Run fmt
+      run: zig fmt --check **/*.zig
+
+  test:
+    needs: fmt
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux x86_64 (posix=disable sanitize=true)
+            target: x86_64-linux-gnu
+            posix: disable
+            sanitize: false
+          - os: ubuntu-latest
+            name: Linux x86_64 (posix=force sanitize=true)
+            target: x86_64-linux-gnu
+            posix: force
+            sanitize: true
+          - os: ubuntu-latest
+            name: Linux x86_64 (posix=force force_foreign_timer_queue=true sanitize=true)
+            target: x86_64-linux-gnu
+            posix: force
+            force_foreign_timer_queue: true
+            sanitize: true
+          - os: windows-latest
+            name: Windows x86_64
+            target: x86_64-windows
+          - os: macos-13
+            name: macOs x86_64
+            target: x86_64-macos
+          - os: macos-14
+            name: macOs Arm64
+            target: aarch64-macos
+          - os: ubuntu-latest
+            name: Linux Arm64
+            target: aarch64-linux
+            qemu-platform: arm64
+          - os: ubuntu-latest
+            name: Linux Risc-v64
+            target: riscv64-linux
+            qemu-platform: riscv64
+            step: test-aio test-minilib
+          - os: ubuntu-latest
+            name: Wasm Wasi
+            target: wasm32-wasi-none
+            step: test-aio test-minilib
+            wasm: true
+
+    name: ${{ matrix.name }}
+    timeout-minutes: 20
+    runs-on: ${{matrix.os}}
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v1
+      with:
+        version: 0.14.0-dev.2540+f857bf72e
+        use-cache: false
+
+    - name: Setup QEMU
+      if: matrix.qemu-platform != ''
+      uses: docker/setup-qemu-action@v1
+      
+    - name: Setup Wasmtime
+      if: matrix.wasm != ''
+      uses: jcbhmr/setup-wasmtime@v2
+
+    - name: Run tests
+      continue-on-error: ${{ matrix.qemu-platform != '' || matrix.wasm != '' }}
+      run: zig build ${{ matrix.step != '' && matrix.step || 'test' }} -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }} --verbose ${{ matrix.posix != '' && format(' -Dposix={0}', matrix.posix) || '' }}${{ matrix.sanitize != '' && format(' -Dsanitize={0}', matrix.sanitize) || '' }}${{ matrix.force_foreign_timer_queue != '' && format(' -Dforce_foreign_timer_queue={0}', matrix.force_foreign_timer_queue) || '' }}
