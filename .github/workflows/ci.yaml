@@ -64,11 +64,11 @@ jobs:
             name: Linux Risc-v64
             target: riscv64-linux
             qemu-platform: riscv64
-            step: test-aio test-minilib
+            step: test:aio test:minilib
           - os: ubuntu-latest
             name: Wasm Wasi
             target: wasm32-wasi-none
-            step: test-aio test-minilib
+            step: test:aio test:minilib
             wasm: true
 
     name: ${{ matrix.name }}
