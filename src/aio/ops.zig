@@ -4,7 +4,7 @@ const aio = @import("../aio.zig");
 const posix = @import("posix/posix.zig");
 const windows = @import("posix/windows.zig");
 
-pub const Id = enum(usize) { _ };
+pub const Id = enum(u17) { invalid = std.math.maxInt(u17), _ };
 
 pub const Link = enum {
     unlinked,
