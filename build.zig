@@ -147,6 +147,7 @@ pub fn build(b: *std.Build) void {
         bug_step.dependOn(&cmd.step);
     }
 
+    const bench_step = b.step("bench", "Run all benchmarks");
     inline for (.{
         .ping_pongs,
         .ticker,
@@ -163,7 +164,7 @@ pub fn build(b: *std.Build) void {
         exe.root_module.addImport("aio", aio);
         exe.root_module.addImport("coro", coro);
         var cmd = makeRunStep(b, target, exe, 3.355e+7, "bench:" ++ @tagName(bench), "Run " ++ @tagName(bench) ++ " benchmark");
-        run_all.dependOn(&cmd.step);
+        bench_step.dependOn(&cmd.step);
     }
 }
 
