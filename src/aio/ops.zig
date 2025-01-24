@@ -495,6 +495,7 @@ pub const Operation = enum {
     });
 
     pub fn tagFromPayloadType(comptime Op: type) @This() {
+        if (!@inComptime()) @compileError("must be run in comptime scope");
         @setEvalBranchQuota(1_000_000);
         inline for (map.values, 0..) |v, idx| {
             if (Op == v) return @enumFromInt(idx);
