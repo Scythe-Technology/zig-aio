@@ -34,19 +34,15 @@ jobs:
           - os: ubuntu-latest
             name: Linux x86_64 (posix=disable sanitize=true)
             target: x86_64-linux-gnu
-            posix: disable
-            sanitize: false
+            options: -Daio:posix=disable -Dsanitize=true
           - os: ubuntu-latest
             name: Linux x86_64 (posix=force sanitize=true)
             target: x86_64-linux-gnu
-            posix: force
-            sanitize: true
+            options: -Daio:posix=force -Dsanitize=true
           - os: ubuntu-latest
             name: Linux x86_64 (posix=force force_foreign_timer_queue=true sanitize=true)
             target: x86_64-linux-gnu
-            posix: force
-            force_foreign_timer_queue: true
-            sanitize: true
+            options: -Daio:posix=force -Dminilib:force_foreign_timer_queue=true -Dsanitize=true
           - os: windows-latest
             name: Windows x86_64
             target: x86_64-windows
@@ -94,4 +90,4 @@ jobs:
 
     - name: Run tests
       continue-on-error: ${{ matrix.qemu-platform != '' || matrix.wasm != '' }}
-      run: zig build ${{ matrix.step != '' && matrix.step || 'test' }} -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }} --verbose ${{ matrix.posix != '' && format(' -Dposix={0}', matrix.posix) || '' }}${{ matrix.sanitize != '' && format(' -Dsanitize={0}', matrix.sanitize) || '' }}${{ matrix.force_foreign_timer_queue != '' && format(' -Dforce_foreign_timer_queue={0}', matrix.force_foreign_timer_queue) || '' }}
+      run: zig build ${{ matrix.step != '' && matrix.step || 'test' }} -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }} --verbose ${{ matrix.options }}
