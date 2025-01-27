@@ -298,10 +298,10 @@ pub fn finish(self: *@This(), id: u16, failure: Operation.Error, comptime mode: 
 }
 
 pub fn debug(comptime fmt: []const u8, args: anytype) void {
+    if (comptime !aio.options.debug) return;
     if (@import("builtin").is_test) {
         std.debug.print("uringlator: " ++ fmt ++ "\n", args);
     } else {
-        if (comptime !aio.options.debug) return;
         log.debug(fmt, args);
     }
 }

@@ -66,6 +66,7 @@ jobs:
             target: wasm32-wasi-none
             step: test:aio test:minilib
             wasm: true
+            options: -Daio:debug=true
 
     name: ${{ matrix.name }}
     timeout-minutes: 20

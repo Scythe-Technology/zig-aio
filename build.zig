@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) void {
 
     var aio_opts = b.addOptions();
     {
-        const debug = b.option(bool, "aio:debug", "enable debug prints") orelse false;
+        const debug = b.option(bool, "aio:debug", "enable debug prints") orelse (optimize == .Debug);
         aio_opts.addOption(bool, "debug", debug);
 
         const PosixMode = enum { auto, force, disable };

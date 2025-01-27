@@ -726,10 +726,10 @@ inline fn uring_handle_completion(op: anytype, cqe: *std.os.linux.io_uring_cqe) 
 }
 
 fn debug(comptime fmt: []const u8, args: anytype) void {
+    if (comptime !aio.options.debug) return;
     if (@import("builtin").is_test) {
         std.debug.print("io_uring: " ++ fmt ++ "\n", args);
     } else {
-        if (comptime !aio.options.debug) return;
         log.debug(fmt, args);
     }
 }

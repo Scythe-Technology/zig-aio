@@ -231,11 +231,11 @@ pub fn detach(self: *@This()) void {
 }
 
 fn debug(comptime fmt: []const u8, args: anytype) void {
+    const options = @import("../coro.zig").options;
+    if (comptime !options.debug) return;
     if (@import("builtin").is_test) {
         std.debug.print("coro: " ++ fmt ++ "\n", args);
     } else {
-        const options = @import("../coro.zig").options;
-        if (comptime !options.debug) return;
         log.debug(fmt, args);
     }
 }
