@@ -2,9 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const aio = @import("../aio.zig");
 const posix = @import("posix/posix.zig");
-const windows = @import("posix/windows.zig");
 
-pub const Id = enum(u17) { invalid = std.math.maxInt(u17), _ };
+pub const Id = @import("minilib").Id(u16, u8);
 
 pub const Link = enum {
     unlinked,
@@ -29,7 +28,6 @@ pub const Nop = struct {
     ident: usize,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -39,7 +37,6 @@ pub const Fsync = struct {
     file: std.fs.File,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -58,7 +55,6 @@ pub const Poll = struct {
     events: Events = .{ .in = true },
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -101,7 +97,6 @@ pub const ReadTty = struct {
     mode: Mode = .direct,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -117,7 +112,6 @@ pub const Read = struct {
     out_read: *usize,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -130,7 +124,6 @@ pub const Write = struct {
     out_written: ?*usize = null,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -141,13 +134,8 @@ pub const Accept = struct {
     out_addr: ?*posix.sockaddr = null,
     inout_addrlen: ?*posix.socklen_t = null,
     out_socket: *std.posix.socket_t,
-    _: switch (builtin.target.os.tag) {
-        .windows => [@sizeOf(posix.sockaddr) * 2 + 16 * 2]u8,
-        else => void,
-    } = undefined,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -159,7 +147,6 @@ pub const Connect = struct {
     addrlen: posix.socklen_t,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -168,14 +155,9 @@ pub const Recv = struct {
     pub const Error = std.posix.RecvFromError || SharedError;
     socket: std.posix.socket_t,
     buffer: []u8,
-    _: switch (builtin.target.os.tag) {
-        .windows => [1]std.os.windows.ws2_32.WSABUF,
-        else => void,
-    } = undefined,
     out_read: *usize,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -185,13 +167,8 @@ pub const Send = struct {
     socket: std.posix.socket_t,
     buffer: []const u8,
     out_written: ?*usize = null,
-    _: switch (builtin.target.os.tag) {
-        .windows => [1]std.os.windows.ws2_32.WSABUF,
-        else => void,
-    } = undefined,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -209,7 +186,6 @@ pub const RecvMsg = struct {
     out_read: *usize,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -221,7 +197,6 @@ pub const SendMsg = struct {
     out_written: ?*usize = null,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -232,7 +207,6 @@ pub const Shutdown = struct {
     how: std.posix.ShutdownHow,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -245,7 +219,6 @@ pub const OpenAt = struct {
     out_file: *std.fs.File,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -255,7 +228,6 @@ pub const CloseFile = struct {
     file: std.fs.File,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -265,7 +237,6 @@ pub const CloseDir = struct {
     dir: std.fs.Dir,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -275,7 +246,6 @@ pub const Timeout = struct {
     ns: u128,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -287,7 +257,6 @@ pub const LinkTimeout = struct {
     ns: u128,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -297,7 +266,6 @@ pub const Cancel = struct {
     id: Id,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -310,7 +278,6 @@ pub const RenameAt = struct {
     new_path: [*:0]const u8,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -321,7 +288,6 @@ pub const UnlinkAt = struct {
     path: [*:0]const u8,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -333,7 +299,6 @@ pub const MkDirAt = struct {
     mode: u32 = std.fs.Dir.default_mode,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -345,7 +310,6 @@ pub const SymlinkAt = struct {
     link_path: [*:0]const u8,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -354,18 +318,8 @@ pub const ChildExit = struct {
     pub const Error = error{NotFound} || SharedError;
     child: std.process.Child.Id,
     out_term: ?*std.process.Child.Term = null,
-    _: switch (builtin.target.os.tag) {
-        .linux => union {
-            // only required for io_uring
-            siginfo: std.posix.siginfo_t,
-            // soft-fallback when IORING_OP_WAITID is not available (requires kernel 6.5)
-            fd: std.posix.fd_t,
-        },
-        else => void,
-    } = undefined,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -381,7 +335,6 @@ pub const Socket = struct {
     out_socket: *std.posix.socket_t,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -391,7 +344,6 @@ pub const CloseSocket = struct {
     socket: std.posix.socket_t,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -400,25 +352,14 @@ pub const NotifyEventSource = struct {
     source: *aio.EventSource,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
 pub const WaitEventSource = struct {
-    pub const WindowsContext = struct {
-        id: u16 = undefined,
-        iocp: *windows.Iocp = undefined,
-        link: windows.EventSource.WaitList.Node = .{ .data = .{} },
-    };
     pub const Error = SharedError;
     source: *aio.EventSource,
-    _: switch (builtin.target.os.tag) {
-        .windows => WindowsContext,
-        else => void,
-    } = undefined,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -427,7 +368,6 @@ pub const CloseEventSource = struct {
     source: *aio.EventSource,
     out_id: ?*Id = null,
     out_error: ?*Error = null,
-    link: Link = .unlinked,
     userdata: usize = 0,
 };
 
@@ -494,46 +434,75 @@ pub const Operation = enum {
         .close_event_source = CloseEventSource,
     });
 
-    pub fn tagFromPayloadType(comptime Op: type) @This() {
-        if (!@inComptime()) @compileError("must be run in comptime scope");
-        @setEvalBranchQuota(1_000_000);
-        inline for (map.values, 0..) |v, idx| {
-            if (Op == v) return @enumFromInt(idx);
-        }
-        unreachable;
-    }
-
-    pub const Types = blk: {
-        var types: []const type = &.{};
-        for (Operation.map.values) |v| types = types ++ .{v};
-        break :blk types;
-    };
-
-    pub const Union = blk: {
-        var fields: []const std.builtin.Type.UnionField = &.{};
-        for (Operation.map.values, 0..) |v, idx| fields = fields ++ .{std.builtin.Type.UnionField{
-            .name = @tagName(@as(Operation, @enumFromInt(idx))),
-            .type = v,
-            .alignment = 0,
-        }};
-        break :blk @Type(.{
-            .@"union" = .{
-                .layout = .auto,
-                .tag_type = Operation,
-                .fields = fields,
-                .decls = &.{},
-            },
-        });
-    };
-
-    pub inline fn uopFromOp(op: anytype) Union {
-        const tag = @tagName(comptime tagFromPayloadType(@TypeOf(op)));
-        return @unionInit(Union, tag, op);
-    }
-
     pub const Error = blk: {
         var set = error{};
         for (Operation.map.values) |v| set = set || v.Error;
         break :blk set;
+    };
+
+    pub const anyresult = opaque {
+        pub fn cast(self: *@This(), T: type) T {
+            return @alignCast(@ptrCast(self));
+        }
+
+        pub fn init(comptime op_type: Operation, op: map.getAssertContains(op_type)) *@This() {
+            @setRuntimeSafety(false);
+            return switch (op_type) {
+                .nop,
+                .poll,
+                .connect,
+                .shutdown,
+                .fsync,
+                .cancel,
+                .timeout,
+                .link_timeout,
+                .mkdir_at,
+                .close_dir,
+                .rename_at,
+                .unlink_at,
+                .close_file,
+                .symlink_at,
+                .close_socket,
+                .wait_event_source,
+                .close_event_source,
+                .notify_event_source,
+                => undefined,
+                .read, .read_tty, .recv, .recv_msg => @ptrCast(op.out_read),
+                .write, .send, .send_msg => @ptrCast(op.out_written),
+                .socket, .accept => @ptrCast(op.out_socket),
+                .open_at => @ptrCast(op.out_file),
+                .child_exit => @ptrCast(op.out_term),
+            };
+        }
+
+        pub fn restore(self: *@This(), comptime op_type: Operation, op: *map.getAssertContains(op_type)) void {
+            @setRuntimeSafety(false);
+            return switch (op_type) {
+                .nop,
+                .poll,
+                .connect,
+                .shutdown,
+                .fsync,
+                .cancel,
+                .timeout,
+                .link_timeout,
+                .mkdir_at,
+                .close_dir,
+                .rename_at,
+                .unlink_at,
+                .close_file,
+                .symlink_at,
+                .close_socket,
+                .wait_event_source,
+                .close_event_source,
+                .notify_event_source,
+                => undefined,
+                .read, .read_tty, .recv, .recv_msg => op.out_read = self.cast(*usize),
+                .write, .send, .send_msg => op.out_written = self.cast(?*usize),
+                .socket, .accept => op.out_socket = self.cast(*std.posix.socket_t),
+                .open_at => op.out_file = self.cast(*std.fs.File),
+                .child_exit => op.out_term = self.cast(?*std.process.Child.Term),
+            };
+        }
     };
 };

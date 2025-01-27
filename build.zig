@@ -133,6 +133,7 @@ pub fn build(b: *std.Build) void {
     inline for (.{
         .@"22",
         .@"31",
+        .@"33",
     }) |bug| {
         const exe = b.addExecutable(.{
             .name = @tagName(bug),
