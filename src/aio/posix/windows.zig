@@ -34,7 +34,7 @@ pub fn wtry(ret: anytype) !@TypeOf(ret) {
     };
     if (wbool == 0) {
         switch (GetLastError()) {
-            .ERROR_IO_PENDING, .HANDLE_EOF => {}, // not error
+            .IO_PENDING, .HANDLE_EOF => {}, // not error
             else => |r| return unexpectedError(r),
         }
     }
