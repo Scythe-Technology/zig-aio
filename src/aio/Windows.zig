@@ -121,6 +121,9 @@ pub fn queue(self: *@This(), pairs: anytype, handler: anytype) aio.Error!void {
 fn werr() Operation.Error {
     switch (GetLastError()) {
         .IO_PENDING, .HANDLE_EOF => {},
+        .NETNAME_DELETED => return error.SocketNotConnected,
+        .CONNECTION_ABORTED => return error.ConnectionAborted,
+        .OPERATION_ABORTED => return error.OperationAborted,
         else => |r| return unexpectedError(r),
     }
     return error.Success;
