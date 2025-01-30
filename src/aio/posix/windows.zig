@@ -17,7 +17,7 @@ const FILE_SKIP_COMPLETION_PORT_ON_SUCCESS = windows.FILE_SKIP_COMPLETION_PORT_O
 const GetLastError = windows.kernel32.GetLastError;
 
 pub fn CloseHandle(hObject: HANDLE) bool {
-    return windows.ntdll.NtClose(hObject) == .SUCCESS;
+    return win32.foundation.CloseHandle(hObject) == 0;
 }
 
 pub fn unexpectedError(err: windows.Win32Error) error{Unexpected} {
