@@ -8,17 +8,20 @@ const Uringlator = @import("uringlator.zig").Uringlator(WindowsOperation);
 const Iocp = @import("posix/windows.zig").Iocp;
 const wposix = @import("posix/windows.zig");
 const win32 = @import("win32");
+
 const windows = std.os.windows;
 
-const checked = wposix.checked;
-const wtry = wposix.wtry;
-const INVALID_HANDLE = windows.INVALID_HANDLE_VALUE;
-const HANDLE = windows.HANDLE;
-const CloseHandle = wposix.CloseHandle;
-const INFINITE = windows.INFINITE;
 const fs = win32.storage.file_system;
 const win_sock = windows.ws2_32;
+
+const HANDLE = windows.HANDLE;
+const INFINITE = windows.INFINITE;
+const INVALID_HANDLE = windows.INVALID_HANDLE_VALUE;
 const INVALID_SOCKET = win_sock.INVALID_SOCKET;
+
+const CloseHandle = wposix.CloseHandle;
+const GetLastError = windows.kernel32.GetLastError;
+const unexpectedError = wposix.unexpectedError;
 
 // Optimized for Windows and uses IOCP operations whenever possible.
 // <https://int64.org/2009/05/14/io-completion-ports-made-easy/>
@@ -48,7 +51,7 @@ const IoContext = struct {
 
     pub fn deinit(self: *@This()) void {
         switch (self.owned) {
-            inline .handle, .job => |h| checked(windows.ntdll.NtClose(h) == .SUCCESS),
+            inline .handle, .job => |h| if (!CloseHandle(h)) unexpectedError(GetLastError()) catch unreachable,
             .none => {},
         }
         self.* = undefined;
@@ -116,7 +119,10 @@ pub fn queue(self: *@This(), pairs: anytype, handler: anytype) aio.Error!void {
 }
 
 fn werr() Operation.Error {
-    _ = try wtry(@as(i32, 0));
+    switch (GetLastError()) {
+        .IO_PENDING, .HANDLE_EOF => {},
+        else => |r| return unexpectedError(r),
+    }
     return error.Success;
 }
 
@@ -284,12 +290,21 @@ pub fn uringlator_start(self: *@This(), id: aio.Id, op_type: Operation) !void {
             const flags = try getHandleAccessInfo(state.read.file.handle);
             if (flags.FILE_READ_DATA != 1) return self.uringlator.finish(self, id, error.NotOpenForReading, .thread_unsafe);
             const h = fs.ReOpenFile(state.read.file.handle, flags, .{ .READ = 1, .WRITE = 1 }, fs.FILE_FLAG_OVERLAPPED);
-            _ = wtry(h != null and h.? != INVALID_HANDLE) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
+            if (h == null or h.? == INVALID_HANDLE) {
+                (switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r),
+                }) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
+            }
             self.iocp.associateHandle(id, h.?) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
             ovl.* = .{ .overlapped = ovlOff(state.read.offset), .owned = .{ .handle = h.? } };
             var read: u32 = undefined;
-            const ret = wtry(windows.kernel32.ReadFile(h.?, state.read.buffer.ptr, @intCast(state.read.buffer.len), &read, &ovl.overlapped)) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
-            if (ret != 0) {
+            if (windows.kernel32.ReadFile(h.?, state.read.buffer.ptr, @intCast(state.read.buffer.len), &read, &ovl.overlapped) == 0) {
+                (switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r),
+                }) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
+            } else {
                 ovl.res = read;
                 self.uringlator.finish(self, id, error.Success, .thread_unsafe);
             }
@@ -300,12 +315,21 @@ pub fn uringlator_start(self: *@This(), id: aio.Id, op_type: Operation) !void {
             const flags = try getHandleAccessInfo(state.write.file.handle);
             if (flags.FILE_WRITE_DATA != 1) return self.uringlator.finish(self, id, error.NotOpenForWriting, .thread_unsafe);
             const h = fs.ReOpenFile(state.write.file.handle, flags, .{ .READ = 1, .WRITE = 1 }, fs.FILE_FLAG_OVERLAPPED);
-            _ = wtry(h != null and h.? != INVALID_HANDLE) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
+            if (h == null or h.? == INVALID_HANDLE) {
+                (switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r),
+                }) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
+            }
             self.iocp.associateHandle(id, h.?) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
             ovl.* = .{ .overlapped = ovlOff(state.write.offset), .owned = .{ .handle = h.? } };
             var written: u32 = undefined;
-            const ret = wtry(windows.kernel32.WriteFile(h.?, state.write.buffer.ptr, @intCast(state.write.buffer.len), &written, &ovl.overlapped)) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
-            if (ret != 0) {
+            if (windows.kernel32.WriteFile(h.?, state.write.buffer.ptr, @intCast(state.write.buffer.len), &written, &ovl.overlapped) == 0) {
+                (switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r),
+                }) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
+            } else {
                 ovl.res = written;
                 self.uringlator.finish(self, id, error.Success, .thread_unsafe);
             }
@@ -318,7 +342,12 @@ pub fn uringlator_start(self: *@This(), id: aio.Id, op_type: Operation) !void {
             self.iocp.associateSocket(id, state.accept.socket) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
             out_socket.* = aio.socket(std.posix.AF.INET, 0, 0) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
             var read: u32 = undefined;
-            if (wtry(win_sock.AcceptEx(state.accept.socket, out_socket.*, &win_state.accept, 0, @sizeOf(std.posix.sockaddr) + 16, @sizeOf(std.posix.sockaddr) + 16, &read, &ovl.overlapped) == 1) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe)) {
+            if (win_sock.AcceptEx(state.accept.socket, out_socket.*, &win_state.accept, 0, @sizeOf(std.posix.sockaddr) + 16, @sizeOf(std.posix.sockaddr) + 16, &read, &ovl.overlapped) != 1) {
+                (switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r),
+                }) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
+            } else {
                 ovl.res = read;
                 self.uringlator.finish(self, id, error.Success, .thread_unsafe);
             }
@@ -387,9 +416,19 @@ pub fn uringlator_start(self: *@This(), id: aio.Id, op_type: Operation) !void {
             const state = self.uringlator.ops.getOnePtr(.state, id);
             const ovl = self.uringlator.ops.getOnePtr(.ovl, id);
             const job = win32.system.job_objects.CreateJobObjectW(null, null);
-            _ = wtry(job != null and job.? != INVALID_HANDLE) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
-            errdefer checked(CloseHandle(job.?));
-            _ = wtry(win32.system.job_objects.AssignProcessToJobObject(job.?, state.child_exit.child)) catch return self.uringlator.finish(self, id, error.Unexpected, .thread_unsafe);
+            if (job == null or job.? == INVALID_HANDLE) {
+                (switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r),
+                }) catch |err| return self.uringlator.finish(self, id, err, .thread_unsafe);
+            }
+            errdefer if (!CloseHandle(job.?)) unexpectedError(GetLastError()) catch unreachable;
+            if (win32.system.job_objects.AssignProcessToJobObject(job.?, state.child_exit.child) == 0) {
+                (switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r),
+                }) catch return self.uringlator.finish(self, id, error.Unexpected, .thread_unsafe);
+            }
             const key: Iocp.Key = .{ .type = .child_exit, .id = id };
             var assoc: win32.system.job_objects.JOBOBJECT_ASSOCIATE_COMPLETION_PORT = .{
                 .CompletionKey = @ptrFromInt(@as(usize, @bitCast(key))),
@@ -397,12 +436,17 @@ pub fn uringlator_start(self: *@This(), id: aio.Id, op_type: Operation) !void {
             };
             ovl.* = .{ .owned = .{ .job = job.? } };
             errdefer self.ovls[id] = .{};
-            _ = wtry(win32.system.job_objects.SetInformationJobObject(
+            if (win32.system.job_objects.SetInformationJobObject(
                 job.?,
                 win32.system.job_objects.JobObjectAssociateCompletionPortInformation,
                 @ptrCast(&assoc),
                 @sizeOf(@TypeOf(assoc)),
-            )) catch return self.uringlator.finish(self, id, error.Unexpected, .thread_unsafe);
+            ) == 0) {
+                (switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r),
+                }) catch return self.uringlator.finish(self, id, error.Unexpected, .thread_unsafe);
+            }
         },
         .wait_event_source => {
             const state = self.uringlator.ops.getOnePtr(.state, id);
@@ -503,7 +547,8 @@ pub fn uringlator_complete(self: *@This(), id: aio.Id, op_type: Operation, failu
             },
             .accept => {
                 const out_socket = self.uringlator.ops.getOne(.out_result, id).cast(*std.posix.socket_t);
-                if (out_socket.* != INVALID_SOCKET) checked(CloseHandle(out_socket.*));
+                if (out_socket.* != INVALID_SOCKET)
+                    if (!CloseHandle(out_socket.*)) unexpectedError(GetLastError()) catch unreachable;
             },
             else => {},
         }

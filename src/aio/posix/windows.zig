@@ -5,15 +5,16 @@ const win32 = @import("win32");
 
 const windows = std.os.windows;
 
-const FILE_SKIP_COMPLETION_PORT_ON_SUCCESS = windows.FILE_SKIP_COMPLETION_PORT_ON_SUCCESS;
-const INFINITE = windows.INFINITE;
-const GetLastError = windows.kernel32.GetLastError;
-const INVALID_HANDLE = windows.INVALID_HANDLE_VALUE;
-const HANDLE = windows.HANDLE;
-
-const threading = win32.system.threading;
-const console = win32.system.console;
 const win_sock = windows.ws2_32;
+const console = win32.system.console;
+const threading = win32.system.threading;
+
+const HANDLE = windows.HANDLE;
+const INFINITE = windows.INFINITE;
+const INVALID_HANDLE = windows.INVALID_HANDLE_VALUE;
+const FILE_SKIP_COMPLETION_PORT_ON_SUCCESS = windows.FILE_SKIP_COMPLETION_PORT_ON_SUCCESS;
+
+const GetLastError = windows.kernel32.GetLastError;
 
 pub fn CloseHandle(hObject: HANDLE) bool {
     return windows.ntdll.NtClose(hObject) == .SUCCESS;
@@ -25,24 +26,6 @@ pub fn unexpectedError(err: windows.Win32Error) error{Unexpected} {
 
 pub fn unexpectedWSAError(err: win_sock.WinsockError) error{Unexpected} {
     return windows.unexpectedWSAError(@enumFromInt(@intFromEnum(err)));
-}
-
-pub fn wtry(ret: anytype) !@TypeOf(ret) {
-    const wbool: windows.BOOL = switch (@TypeOf(ret)) {
-        bool => @intFromBool(ret),
-        else => ret,
-    };
-    if (wbool == 0) {
-        switch (GetLastError()) {
-            .IO_PENDING, .HANDLE_EOF => {}, // not error
-            else => |r| return unexpectedError(r),
-        }
-    }
-    return ret;
-}
-
-pub fn checked(ret: anytype) void {
-    _ = wtry(ret) catch unreachable;
 }
 
 // Light wrapper, mainly to link EventSources to this
@@ -71,14 +54,24 @@ pub const Iocp = struct {
 
     pub fn init(num_threads: u32) !@This() {
         const port = windows.kernel32.CreateIoCompletionPort(INVALID_HANDLE, null, 0, num_threads).?;
-        _ = try wtry(port != INVALID_HANDLE);
-        errdefer checked(CloseHandle(port));
+        if (port == INVALID_HANDLE) {
+            switch (GetLastError()) {
+                .IO_PENDING, .HANDLE_EOF => {}, // not error
+                else => |r| return unexpectedError(r),
+            }
+        }
+        errdefer if (!CloseHandle(port)) unexpectedError(GetLastError()) catch unreachable;
         return .{ .port = port, .num_threads = num_threads };
     }
 
     pub fn notify(self: *@This(), key: Key, ptr: ?*anyopaque) void {
         // data for notification is put into the transferred bytes, overlapped can be anything
-        checked(windows.kernel32.PostQueuedCompletionStatus(self.port, 0, @bitCast(key), @ptrCast(@alignCast(ptr))));
+        if (windows.kernel32.PostQueuedCompletionStatus(self.port, 0, @bitCast(key), @ptrCast(@alignCast(ptr))) == 0) {
+            switch (GetLastError()) {
+                .IO_PENDING, .HANDLE_EOF => {},
+                else => |r| unexpectedError(r) catch unreachable,
+            }
+        }
     }
 
     pub fn deinit(self: *@This()) void {
@@ -86,19 +79,25 @@ pub const Iocp = struct {
         // this doesn't seem to happen under wine though (wine bug?)
         // anyhow, wakeup the drain thread by hand
         for (0..self.num_threads) |_| self.notify(.{ .type = .shutdown, .id = undefined }, null);
-        checked(CloseHandle(self.port));
+        if (!CloseHandle(self.port)) unexpectedError(GetLastError()) catch unreachable;
         self.* = undefined;
     }
 
     pub fn associateHandle(self: *@This(), _: ops.Id, handle: HANDLE) !void {
         const fs = win32.storage.file_system;
         const key: Key = .{ .type = .overlapped, .id = undefined };
-        _ = try wtry(fs.SetFileCompletionNotificationModes(handle, FILE_SKIP_COMPLETION_PORT_ON_SUCCESS));
+        if (fs.SetFileCompletionNotificationModes(handle, FILE_SKIP_COMPLETION_PORT_ON_SUCCESS) == 0) {
+            switch (GetLastError()) {
+                .IO_PENDING, .HANDLE_EOF => {},
+                else => |r| return unexpectedError(r),
+            }
+        }
         const res = windows.kernel32.CreateIoCompletionPort(handle, self.port, @bitCast(key), 0);
         if (res == null or res.? == INVALID_HANDLE) {
             // ignore 87 as it may mean that we just re-registered the handle
-            if (GetLastError() == .INVALID_PARAMETER) return;
-            _ = try wtry(@as(i32, 0));
+            if (GetLastError() == .INVALID_PARAMETER)
+                return;
+            return unexpectedError(GetLastError());
         }
     }
 
@@ -127,13 +126,18 @@ pub const EventSource = struct {
 
     pub fn deinit(self: *@This()) void {
         std.debug.assert(self.waiters.first == null); // having dangling waiters is bad
-        checked(windows.ntdll.NtClose(self.fd) == .SUCCESS);
+        if (!CloseHandle(self.fd)) unexpectedError(GetLastError()) catch unreachable;
         self.* = undefined;
     }
 
     pub fn notify(self: *@This()) void {
         if (self.counter.fetchAdd(1, .monotonic) == 0) {
-            _ = wtry(threading.SetEvent(self.fd)) catch @panic("EventSource.notify failed");
+            if (threading.SetEvent(self.fd) == 0) {
+                switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r) catch @panic("EventSource.notify failed"),
+                }
+            }
             self.mutex.lock();
             defer self.mutex.unlock();
             while (self.waiters.popFirst()) |w| w.data.cast().iocp.notify(.{ .type = .event_source, .id = w.data.cast().id }, self);
@@ -145,19 +149,39 @@ pub const EventSource = struct {
             const WAIT_TIMEOUT = 0x00000102;
             const res = threading.WaitForSingleObject(self.fd, 0);
             if (res == WAIT_TIMEOUT) return error.WouldBlock;
-            _ = wtry(res == 0) catch @panic("EventSource.wait failed");
+            if (res != 0) {
+                switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r) catch @panic("EventSource.wait failed"),
+                }
+            }
         }
         if (self.counter.fetchSub(1, .release) == 1) {
-            _ = wtry(threading.ResetEvent(self.fd)) catch @panic("EventSource.wait failed");
+            if (threading.ResetEvent(self.fd) == 0) {
+                switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r) catch @panic("EventSource.wait failed"),
+                }
+            }
         }
     }
 
     pub fn wait(self: *@This()) void {
         while (self.counter.load(.acquire) == 0) {
-            _ = wtry(threading.WaitForSingleObject(self.fd, INFINITE) == 0) catch @panic("EventSource.wait failed");
+            if (threading.WaitForSingleObject(self.fd, INFINITE) != 0) {
+                switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r) catch @panic("EventSource.wait failed"),
+                }
+            }
         }
         if (self.counter.fetchSub(1, .release) == 1) {
-            _ = wtry(threading.ResetEvent(self.fd)) catch @panic("EventSource.wait failed");
+            if (threading.ResetEvent(self.fd) == 0) {
+                switch (GetLastError()) {
+                    .IO_PENDING, .HANDLE_EOF => {},
+                    else => |r| unexpectedError(r) catch @panic("EventSource.wait failed"),
+                }
+            }
         }
     }
 
