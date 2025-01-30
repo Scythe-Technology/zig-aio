@@ -362,10 +362,10 @@ pub fn recvmsgEx(sockfd: std.posix.socket_t, msg: *msghdr, _: u32, overlapped: ?
                 sock,
                 win_sock.SIO_GET_EXTENSION_FUNCTION_POINTER,
                 // not in zigwin32
-                @constCast(@ptrCast(&win_sock.WSAID_WSARECVMSG.Data4)),
-                win_sock.WSAID_WSARECVMSG.Data4.len,
+                @ptrCast(&win_sock.WSAID_WSARECVMSG),
+                @sizeOf(windows.GUID),
                 @ptrCast(&fun),
-                @sizeOf(@TypeOf(fun)),
+                @sizeOf(win_sock.LPFN_WSARECVMSG),
                 &trash,
                 null,
                 null,
