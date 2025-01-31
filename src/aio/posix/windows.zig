@@ -7,10 +7,8 @@ const windows = std.os.windows;
 
 const win_sock = windows.ws2_32;
 const console = win32.system.console;
-const threading = win32.system.threading;
 
 const HANDLE = windows.HANDLE;
-const INFINITE = windows.INFINITE;
 const INVALID_HANDLE = windows.INVALID_HANDLE_VALUE;
 const FILE_SKIP_COMPLETION_PORT_ON_SUCCESS = windows.FILE_SKIP_COMPLETION_PORT_ON_SUCCESS;
 
@@ -115,97 +113,56 @@ pub const EventSource = struct {
 
     pub const WaitList = std.SinglyLinkedList(Link(OperationContext, "link", .single));
 
-    fd: HANDLE,
-    counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     waiters: WaitList = .{},
-    mutex: std.Thread.Mutex = .{},
+    semaphore: std.Thread.Semaphore = .{},
 
     pub fn init() !@This() {
-        return .{ .fd = try (threading.CreateEventW(null, 1, 1, null) orelse error.SystemResources) };
+        return .{};
     }
 
     pub fn deinit(self: *@This()) void {
         std.debug.assert(self.waiters.first == null); // having dangling waiters is bad
-        if (!CloseHandle(self.fd)) unexpectedError(GetLastError()) catch unreachable;
         self.* = undefined;
     }
 
     pub fn notify(self: *@This()) void {
-        if (self.counter.fetchAdd(1, .monotonic) == 0) {
-            if (threading.SetEvent(self.fd) == 0) {
-                switch (GetLastError()) {
-                    .IO_PENDING, .HANDLE_EOF => {},
-                    else => |r| unexpectedError(r) catch @panic("EventSource.notify failed"),
-                }
+        const notified_one = blk: {
+            self.semaphore.mutex.lock();
+            defer self.semaphore.mutex.unlock();
+            if (self.waiters.popFirst()) |w| {
+                w.data.cast().iocp.notify(.{ .type = .event_source, .id = w.data.cast().id }, self);
+                break :blk true;
             }
-            self.mutex.lock();
-            defer self.mutex.unlock();
-            while (self.waiters.popFirst()) |w| w.data.cast().iocp.notify(.{ .type = .event_source, .id = w.data.cast().id }, self);
-        }
+            break :blk false;
+        };
+        if (!notified_one) self.semaphore.post();
     }
 
     pub fn waitNonBlocking(self: *@This()) error{WouldBlock}!void {
-        while (self.counter.load(.acquire) == 0) {
-            const WAIT_TIMEOUT = 0x00000102;
-            const res = threading.WaitForSingleObject(self.fd, 0);
-            if (res == WAIT_TIMEOUT) return error.WouldBlock;
-            if (res != 0) {
-                switch (GetLastError()) {
-                    .IO_PENDING, .HANDLE_EOF => {},
-                    else => |r| unexpectedError(r) catch @panic("EventSource.wait failed"),
-                }
-            }
-        }
-        if (self.counter.fetchSub(1, .release) == 1) {
-            if (threading.ResetEvent(self.fd) == 0) {
-                switch (GetLastError()) {
-                    .IO_PENDING, .HANDLE_EOF => {},
-                    else => |r| unexpectedError(r) catch @panic("EventSource.wait failed"),
-                }
-            }
-        }
+        self.semaphore.timedWait(0) catch return error.WouldBlock;
     }
 
     pub fn wait(self: *@This()) void {
-        while (self.counter.load(.acquire) == 0) {
-            if (threading.WaitForSingleObject(self.fd, INFINITE) != 0) {
-                switch (GetLastError()) {
-                    .IO_PENDING, .HANDLE_EOF => {},
-                    else => |r| unexpectedError(r) catch @panic("EventSource.wait failed"),
-                }
-            }
-        }
-        if (self.counter.fetchSub(1, .release) == 1) {
-            if (threading.ResetEvent(self.fd) == 0) {
-                switch (GetLastError()) {
-                    .IO_PENDING, .HANDLE_EOF => {},
-                    else => |r| unexpectedError(r) catch @panic("EventSource.wait failed"),
-                }
-            }
-        }
+        self.semaphore.wait();
     }
 
     pub fn addWaiter(self: *@This(), node: *WaitList.Node) void {
-        if (self.counter.load(.acquire) > 0) {
-            node.data.cast().iocp.notify(.{ .type = .event_source, .id = node.data.cast().id }, self);
-            return;
-        }
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.semaphore.mutex.lock();
+        defer self.semaphore.mutex.unlock();
         self.waiters.prepend(node);
     }
 
-    pub fn removeWaiter(self: *@This(), node: *WaitList.Node) void {
-        blk: {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+    pub fn removeWaiter(self: *@This(), node: *WaitList.Node) error{NotFound}!void {
+        {
+            self.semaphore.mutex.lock();
+            defer self.semaphore.mutex.unlock();
             // safer list.remove ...
             if (self.waiters.first == node) {
                 self.waiters.first = node.next;
             } else if (self.waiters.first) |first| {
                 var current_elm = first;
                 while (current_elm.next != node) {
-                    if (current_elm.next == null) break :blk;
+                    if (current_elm.next == null) return error.NotFound;
                     current_elm = current_elm.next.?;
                 }
                 current_elm.next = node.next;
