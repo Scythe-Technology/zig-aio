@@ -115,6 +115,7 @@ pub fn build(b: *std.Build) void {
         .@"22",
         .@"31",
         .@"33",
+        .ticker,
     }) |bug| {
         const exe = b.addExecutable(.{
             .name = @tagName(bug),
@@ -122,7 +123,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .sanitize_thread = sanitize,
-            .single_threaded = single_threaded,
+            .single_threaded = if (bug == .ticker) false else single_threaded,
             .strip = false,
         });
         exe.root_module.addImport("aio", aio);
@@ -134,7 +135,6 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Run all benchmarks");
     inline for (.{
         .ping_pongs,
-        .ticker,
         .flow,
         .aio_nops,
         .coro_nops,
@@ -145,7 +145,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = .ReleaseFast,
             .sanitize_thread = sanitize,
-            .single_threaded = if (bench == .ticker) false else single_threaded,
+            .single_threaded = single_threaded,
             .strip = false,
         });
         exe.root_module.addImport("aio", aio);
