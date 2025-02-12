@@ -138,6 +138,7 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Run all benchmarks");
     inline for (.{
         .ping_pongs,
+        .ping_pongs_uring,
         .flow,
         .flow_uring,
         .aio_nops,
