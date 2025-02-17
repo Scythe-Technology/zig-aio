@@ -97,7 +97,10 @@ pub fn build(b: *std.Build) void {
             .link_libc = aio.link_libc,
             .sanitize_thread = sanitize,
             .single_threaded = single_threaded,
-            .test_runner = b.path("test-runner.zig"),
+            .test_runner = .{
+                .mode = .simple,
+                .path = b.path("test-runner.zig"),
+            },
             .strip = false,
         });
         switch (mod) {
