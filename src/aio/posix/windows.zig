@@ -58,7 +58,6 @@ pub const Iocp = struct {
                 else => |r| return unexpectedError(r),
             }
         }
-        errdefer if (!CloseHandle(port)) unexpectedError(GetLastError()) catch unreachable;
         return .{ .port = port, .num_threads = num_threads };
     }
 

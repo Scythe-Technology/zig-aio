@@ -120,7 +120,7 @@ fn werr() Operation.Error {
         .IO_PENDING, .HANDLE_EOF => {},
         .NETNAME_DELETED => return error.SocketNotConnected,
         .CONNECTION_ABORTED => return error.ConnectionAborted,
-        .OPERATION_ABORTED => return error.OperationAborted,
+        .OPERATION_ABORTED, .HANDLES_CLOSED => return error.OperationAborted,
         else => |r| return unexpectedError(r),
     }
     return error.Success;
