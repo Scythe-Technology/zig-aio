@@ -36,22 +36,38 @@ jobs:
             target: x86_64-linux-gnu
             options: -Daio:posix=disable -Dsanitize=true
           - os: ubuntu-latest
+            name: Linux x86_64 (posix=disable single-threaded=true)
+            target: x86_64-linux-gnu
+            options: -Daio:posix=disable -Dsingle-threaded=true
+          - os: ubuntu-latest
             name: Linux x86_64 (posix=force sanitize=true)
             target: x86_64-linux-gnu
             options: -Daio:posix=force -Dsanitize=true
           - os: ubuntu-latest
-            name: Linux x86_64 (posix=force force_foreign_timer_queue=true sanitize=true)
+            name: Linux x86_64 (posix=force single-threaded=true)
             target: x86_64-linux-gnu
-            options: -Daio:posix=force -Dminilib:force_foreign_timer_queue=true -Dsanitize=true
+            options: -Daio:posix=force -Dsingle-threaded=true
           - os: windows-latest
             name: Windows x86_64
             target: x86_64-windows
+          - os: windows-latest
+            name: Windows x86_64 (single-threaded=true)
+            target: x86_64-windows
+            options: -Dsingle-threaded=true
           - os: macos-13
             name: macOs x86_64
             target: x86_64-macos
+          - os: macos-13
+            name: macOs x86_64 (single-threaded=true)
+            target: x86_64-macos
+            options: -Dsingle-threaded=true
           - os: macos-14
             name: macOs Arm64
             target: aarch64-macos
+          - os: macos-14
+            name: macOs Arm64 (single-threaded=true)
+            target: aarch64-macos
+            options: -Dsingle-threaded=true
           - os: ubuntu-latest
             name: Linux Arm64
             target: aarch64-linux
@@ -91,4 +107,4 @@ jobs:
 
     - name: Run tests
       continue-on-error: ${{ matrix.qemu-platform != '' || matrix.wasm != '' }}
-      run: zig build ${{ matrix.step != '' && matrix.step || 'test' }} -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }} --verbose ${{ matrix.options }}
+      run: zig build ${{ matrix.step != '' && matrix.step || 'test bug' }} -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }} --verbose ${{ matrix.options }}
